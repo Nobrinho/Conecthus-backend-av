@@ -1,0 +1,7 @@
+# Normaliza para LF no repositório, independente do sistema de quem clona.
+* text=auto eol=lf
+
+# Binários e arquivos que não devem sofrer conversão.
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+.git
+.gitignore
+.env
+.env.development
+.env.production
+*.log
+*.tsbuildinfo
+
+# Recriado dentro do build pelo `prisma generate`.
+src/generated
+
+.idea
+.DS_Store

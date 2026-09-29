@@ -1,0 +1,90 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: nest-template-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d app']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Banco separado usado apenas por `npm run test:e2e`, para que os testes
+  # possam truncar as tabelas sem tocar nos dados de desenvolvimento.
+  db-test:
+    image: postgres:17-alpine
+    container_name: nest-template-db-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_test
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d app_test']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Aplica as migrations e sai. Roda a partir do estágio `build`, que é o
+  # único com a CLI do Prisma. Deixar isso em um serviço próprio, e não no
+  # start da API, evita que várias réplicas tentem migrar o banco ao mesmo tempo.
+  migrate:
+    build:
+      context: .
+      target: build
+    container_name: nest-template-migrate
+    command: npx prisma migrate deploy
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/app?schema=public
+    restart: 'no'
+
+  # Sobe a API junto do banco. Use `docker compose up --build api` quando quiser
+  # validar a imagem de produção; no dia a dia prefira `npm run start:dev`.
+  api:
+    build:
+      context: .
+      target: runner
+    container_name: nest-template-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api
+      CORS_ORIGINS: '*'
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/app?schema=public
+      JWT_ACCESS_SECRET: troque-este-segredo-de-access-em-producao-0000000
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_SECRET: troque-este-segredo-de-refresh-em-producao-000000
+      JWT_REFRESH_TTL: 7d
+      THROTTLE_TTL: 60000
+      THROTTLE_LIMIT: 120
+      THROTTLE_CREDENTIALS_TTL: 60000
+      THROTTLE_CREDENTIALS_LIMIT: 10
+      SWAGGER_ENABLED: 'true'
+      SWAGGER_PATH: docs
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:
