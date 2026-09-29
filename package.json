@@ -1,5 +1,5 @@
 {
-  "name": "backend-nestjs-template",
+  "name": "conecthus-backend-av",
   "version": "0.1.0",
   "description": "Template de API REST em NestJS com Prisma, autenticacao JWT, RBAC e documentacao Swagger",
   "author": "",
