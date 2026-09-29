@@ -1,6 +1,6 @@
-# Backend NestJS Template
+# conecthus-backend-av
 
-Template de API REST em NestJS pronto para virar o ponto de partida de um projeto novo. Já vem com autenticação JWT completa, controle de acesso por papel, persistência com Prisma, documentação OpenAPI navegável, logs estruturados, testes e containers.
+API REST em NestJS criada a partir do template [backend-nestjs-template](https://github.com/Nobrinho/backend-nestjs-template). Já vem com autenticação JWT completa, controle de acesso por papel, persistência com Prisma, documentação OpenAPI navegável, logs estruturados, testes e containers.
 
 O módulo `tasks` existe como recurso de referência: é um CRUD completo com paginação, busca e regra de ownership, feito para ser copiado quando você criar o primeiro recurso do seu domínio.
 
