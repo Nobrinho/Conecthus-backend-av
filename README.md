@@ -199,6 +199,7 @@ Chaves UUID; as tabelas de token caem em cascata quando o usuário é removido.
 - **Sem autocadastro:** o `POST /auth/register` do template foi removido. Usuários são criados por quem está logado, como no protótipo.
 - **"E-mail não cadastrado":** o protótipo exibe essa mensagem, então `forgot-password` responde 404. Isso permite descobrir quais e-mails têm conta; o risco é mitigado pelo rate limit estrito da rota. Em produção, o recomendado seria responder sempre 204.
 - **`updatedAt` nulo na criação**, em vez do `@updatedAt` automático do Prisma, para diferenciar "nunca editado" na tela Visualizar.
+- **Datas com fuso (`timestamptz`):** o banco guarda o instante com fuso, então clientes de banco mostram o horário local de quem consulta. A API responde em ISO 8601 UTC (`...Z`) e o frontend converte para o fuso do navegador.
 - **Busca só por nome**, conforme o PDF (o template buscava também por e-mail).
 - **Módulo de exemplo `tasks` removido** para o código ficar focado no que é avaliado.
 

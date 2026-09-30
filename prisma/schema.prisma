@@ -23,20 +23,20 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String    @id @default(uuid()) @db.Uuid
   /// Nome completo: apenas letras e espaços, até 30 caracteres.
-  name         String   @db.VarChar(30)
+  name         String    @db.VarChar(30)
   /// Email de login, sempre minúsculo. Até 40 caracteres.
-  email        String   @unique @db.VarChar(40)
+  email        String    @unique @db.VarChar(40)
   /// Matrícula: 4 a 10 dígitos. Texto para preservar zeros à esquerda.
-  registration String   @unique @db.VarChar(10)
+  registration String    @unique @db.VarChar(10)
   /// Hash argon2id. Nunca sai da camada de repositorio.
   passwordHash String
-  role         Role     @default(USER)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  role         Role      @default(USER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
   /// Momento da última edição; nulo enquanto o cadastro nunca foi editado.
-  updatedAt    DateTime?
+  updatedAt    DateTime? @db.Timestamptz(3)
 
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -54,9 +54,9 @@ model RefreshToken {
   tokenHash String
   userId    String    @db.Uuid
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
 
   @@index([userId])
   @@index([expiresAt])
@@ -70,9 +70,9 @@ model PasswordResetToken {
   tokenHash String    @unique
   userId    String    @db.Uuid
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
 
   @@index([userId])
   @@map("password_reset_tokens")
