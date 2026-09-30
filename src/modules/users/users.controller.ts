@@ -16,6 +16,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -23,6 +24,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ApiPaginatedResponse } from '../../common/decorators/api-paginated-response.decorator.js';
 import type { PaginatedDto } from '../../common/dto/paginated-result.dto.js';
 import { ErrorResponseDto } from '../../common/dto/error-response.dto.js';
@@ -110,7 +112,14 @@ export class UsersController {
   })
   @ApiNoContentResponse({ description: 'Usuário removido' })
   @ApiNotFoundResponse({ description: 'Usuário inexistente', type: ErrorResponseDto })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.usersService.remove(id);
+  @ApiForbiddenResponse({
+    description: 'Tentativa de excluir o próprio usuário',
+    type: ErrorResponseDto,
+  })
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.usersService.remove(id, actorId);
   }
 }

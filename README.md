@@ -16,7 +16,7 @@ API REST do **WenLock**, sistema de controle de acesso com CRUD completo de usu�
 | Documentar com Swagger UI | `/docs`, com exemplos, schemas e todas as respostas de erro de cada rota |
 | Banco relacional (MySQL ou PostgreSQL) | PostgreSQL 17 com Prisma 7 |
 | Tabelas para os dados dos usuários | `prisma/schema.prisma` + migration em `prisma/migrations` (tabela `users`) |
-| Nome só letras · E-mail válido · Matrícula só números · Senha 6 alfanuméricos · todos obrigatórios | `src/modules/users/user.rules.ts` + `dto/create-user.dto.ts` (o frontend repete as mesmas regras) |
+| Nome completo só com letras · E-mail válido · Matrícula só números · Senha 6 alfanuméricos · todos obrigatórios | `src/modules/users/user.rules.ts` + `dto/create-user.dto.ts` (o frontend repete as mesmas regras) |
 | Pesquisa por nome e paginação | `GET /users?search=&page=`, 15 por página, em ordem alfabética |
 | Login e recuperação de senha (telas do protótipo) | `src/modules/auth`: JWT + refresh rotacionado, `forgot-password` e `reset-password` por e-mail |
 
@@ -81,7 +81,7 @@ Todas as rotas ficam sob `/api/v1`. Tudo exige `Authorization: Bearer <accessTok
 | `GET` | `/users` | Lista paginada. `search` (parte do nome, sem diferenciar maiúsculas), `page` (a partir de 1), `limit` (padrão 15), `order` (`asc` por padrão). |
 | `GET` | `/users/:id` | Busca pelo id (UUID). 404 se não existe. |
 | `PATCH` | `/users/:id` | Atualização parcial. Sem `password`, a senha atual é mantida. Grava `updatedAt`. |
-| `DELETE` | `/users/:id` | Remove e encerra as sessões do usuário em cascata. Responde 204. |
+| `DELETE` | `/users/:id` | Remove e encerra as sessões do usuário em cascata. Responde 204. 403 se o id é o do próprio usuário logado. |
 
 Resposta de usuário (nunca contém senha nem hash):
 
@@ -126,7 +126,7 @@ Definidas uma única vez em [src/modules/users/user.rules.ts](src/modules/users/
 
 | Campo | Regra | Origem |
 | --- | --- | --- |
-| `name` | Obrigatório, só letras (com acento) separadas por um espaço, até 30 caracteres | PDF "Apenas Letras" + limite do XD |
+| `name` | Obrigatório, nome completo (ao menos nome e sobrenome), só letras (com acento) separadas por um espaço, até 30 caracteres | PDF "Apenas Letras" + limite do XD |
 | `email` | Obrigatório, e-mail válido, até 40 caracteres, único, gravado em minúsculas | PDF + limite do XD |
 | `registration` | Obrigatório, só dígitos, de 4 a 10, única, guardada como texto (preserva zeros à esquerda) | PDF "Apenas Números" + limites do XD |
 | `password` | Obrigatório, exatamente 6 caracteres alfanuméricos, guardada como hash argon2id | PDF "Alfanuméricos de 6 dígitos" |
@@ -200,6 +200,7 @@ Chaves UUID; as tabelas de token caem em cascata quando o usuário é removido.
 - **"E-mail não cadastrado":** o protótipo exibe essa mensagem, então `forgot-password` responde 404. Isso permite descobrir quais e-mails têm conta; o risco é mitigado pelo rate limit estrito da rota. Em produção, o recomendado seria responder sempre 204.
 - **`updatedAt` nulo na criação**, em vez do `@updatedAt` automático do Prisma, para diferenciar "nunca editado" na tela Visualizar.
 - **Datas com fuso (`timestamptz`):** o banco guarda o instante com fuso, então clientes de banco mostram o horário local de quem consulta. A API responde em ISO 8601 UTC (`...Z`) e o frontend converte para o fuso do navegador.
+- **Ninguém exclui a própria conta:** `DELETE /users/:id` com o id da sessão responde 403 ("Não é possível excluir o próprio usuário"). A regra fica na API, não só na tela, porque o pedido pode chegar por outro caminho.
 - **Busca só por nome**, conforme o PDF (o template buscava também por e-mail).
 - **Módulo de exemplo `tasks` removido** para o código ficar focado no que é avaliado.
 
@@ -272,7 +273,7 @@ npm run test:e2e                # 45 testes e2e contra Postgres real
 ```
 
 - **Unidade:** `UsersService` (hash, 409 com campo, busca só por nome, paginação, senha opcional na edição) e `AuthService` (login por e-mail e por matrícula, mensagem única, rotação e reuso de refresh, forgot/reset com token de uso único).
-- **E2E:** sobem a aplicação inteira com o mesmo `configureApp` do `main.ts`. Cobrem cada regra de validação campo a campo (inclusive nomes acentuados e limites), obrigatoriedade, 409 por e-mail (sem diferenciar maiúsculas) e matrícula, paginação de 15 em ordem alfabética, busca, 404/400 por id, edição parcial com e sem senha, exclusão, 401 sem token e o fluxo completo de recuperação de senha. O envio de e-mail é trocado por uma caixa de saída em memória.
+- **E2E:** sobem a aplicação inteira com o mesmo `configureApp` do `main.ts`. Cobrem cada regra de validação campo a campo (inclusive nomes acentuados e limites), obrigatoriedade, 409 por e-mail (sem diferenciar maiúsculas) e matrícula, paginação de 15 em ordem alfabética, busca, 404/400 por id, edição parcial com e sem senha, exclusão (e o 403 ao excluir a si mesmo), 401 sem token e o fluxo completo de recuperação de senha. O envio de e-mail é trocado por uma caixa de saída em memória.
 
 O **CI** (`.github/workflows/ci.yml`) roda lint, formatação, typecheck, unidade e build, e os e2e com um Postgres de serviço.
 

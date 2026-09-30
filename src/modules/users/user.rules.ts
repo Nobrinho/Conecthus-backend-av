@@ -12,6 +12,9 @@ export const USER_RULES = {
     /** Letras (inclusive acentuadas) separadas por um único espaço. */
     pattern: /^\p{L}+(?: \p{L}+)*$/u,
     message: 'O nome deve conter apenas letras',
+    /** "Nome Completo": ao menos nome e sobrenome. */
+    fullNamePattern: /^\p{L}+(?: \p{L}+)+$/u,
+    fullNameMessage: 'Informe o nome completo (nome e sobrenome)',
   },
   email: {
     maxLength: 40,
