@@ -1,37 +1,54 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, Length, Matches } from 'class-validator';
-import { Role } from '../../../infra/prisma/prisma.client.js';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsNotEmpty, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { USER_RULES } from '../user.rules.js';
 
-export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
-export const PASSWORD_MESSAGE =
-  'A senha precisa ter no mínimo 8 caracteres, com ao menos uma letra e um número';
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class CreateUserDto {
-  /** Email de login. Precisa ser único. */
-  @IsEmail({}, { message: 'Informe um email válido' })
-  @ApiProperty({ example: 'ana.silva@exemplo.com' })
-  email!: string;
-
-  /** Nome de exibicao. */
+  /** Nome completo. Apenas letras e espaços. */
+  @Transform(trim)
   @IsString()
-  @Length(2, 120)
-  @ApiProperty({ example: 'Ana Silva' })
+  @IsNotEmpty({ message: 'O nome é obrigatório' })
+  @MaxLength(USER_RULES.name.maxLength, {
+    message: `O nome deve ter no máximo ${USER_RULES.name.maxLength} caracteres`,
+  })
+  @Matches(USER_RULES.name.pattern, { message: USER_RULES.name.message })
+  @ApiProperty({ example: 'Adriano Machado Souza', maxLength: USER_RULES.name.maxLength })
   name!: string;
 
-  /** Senha em texto puro. E convertida em hash argon2id antes de persistir. */
+  /** Email de login. Único e armazenado em minúsculas. */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @IsNotEmpty({ message: 'O e-mail é obrigatório' })
+  @MaxLength(USER_RULES.email.maxLength, {
+    message: `O e-mail deve ter no máximo ${USER_RULES.email.maxLength} caracteres`,
+  })
+  @IsEmail({}, { message: 'Informe um e-mail válido' })
+  @ApiProperty({
+    example: 'adriano.machado@callidus.com.br',
+    maxLength: USER_RULES.email.maxLength,
+  })
+  email!: string;
+
+  /** Matrícula. Apenas números, única. */
+  @Transform(trim)
   @IsString()
-  @Matches(PASSWORD_RULE, { message: PASSWORD_MESSAGE })
-  @ApiProperty({ example: 'senhaSegura1', minLength: 8 })
+  @IsNotEmpty({ message: 'A matrícula é obrigatória' })
+  @Length(USER_RULES.registration.minLength, USER_RULES.registration.maxLength, {
+    message: `A matrícula deve ter entre ${USER_RULES.registration.minLength} e ${USER_RULES.registration.maxLength} dígitos`,
+  })
+  @Matches(USER_RULES.registration.pattern, { message: USER_RULES.registration.message })
+  @ApiProperty({
+    example: '809987',
+    minLength: USER_RULES.registration.minLength,
+    maxLength: USER_RULES.registration.maxLength,
+  })
+  registration!: string;
+
+  /** Senha em texto puro. Convertida em hash argon2id antes de persistir. */
+  @IsString()
+  @IsNotEmpty({ message: 'A senha é obrigatória' })
+  @Matches(USER_RULES.password.pattern, { message: USER_RULES.password.message })
+  @ApiProperty({ example: 'abc123', minLength: 6, maxLength: 6 })
   password!: string;
-
-  /** Papel do usuário. Apenas administradores podem definir este campo. */
-  @IsOptional()
-  @IsEnum(Role)
-  @ApiProperty({ enum: Role, enumName: 'Role', required: false, default: Role.USER })
-  role?: Role;
-
-  @IsOptional()
-  @IsBoolean()
-  @ApiProperty({ required: false, default: true })
-  isActive?: boolean;
 }

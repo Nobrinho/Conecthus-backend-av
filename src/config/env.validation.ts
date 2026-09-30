@@ -42,6 +42,17 @@ export const envSchema = z
     THROTTLE_CREDENTIALS_TTL: z.coerce.number().int().positive().default(60_000),
     THROTTLE_CREDENTIALS_LIMIT: z.coerce.number().int().positive().default(10),
 
+    /** URL pública do frontend, usada para montar o link de redefinição de senha. */
+    APP_URL: z.url().default('http://localhost:3001'),
+    PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(30),
+
+    /** Sem SMTP_HOST os e-mails são apenas registrados no log (útil em dev e testes). */
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().positive().max(65535).default(1025),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    MAIL_FROM: z.string().min(1).default('WenLock <nao-responda@wenlock.local>'),
+
     SWAGGER_ENABLED: z.stringbool().default(true),
     SWAGGER_PATH: z.string().min(1).default('docs'),
   })

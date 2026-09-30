@@ -1,17 +1,20 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import argon2 from 'argon2';
 import request from 'supertest';
 import type TestAgent from 'supertest/lib/agent.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/config/app-setup.js';
+import { MailService, type MailMessage } from '../../src/infra/mail/mail.service.js';
 import { PrismaService } from '../../src/infra/prisma/prisma.service.js';
-import { Role } from '../../src/infra/prisma/prisma.client.js';
 
 export interface TestContext {
   app: INestApplication;
   prisma: PrismaService;
   /** Cliente HTTP já apontado para a instância em memória. */
   http: TestAgent;
+  /** E-mails que a aplicação "enviou" durante o teste. */
+  outbox: MailMessage[];
   close: () => Promise<void>;
 }
 
@@ -19,11 +22,16 @@ export interface TestContext {
  * Sobe a aplicação inteira em memória para os testes e2e.
  *
  * Usa o mesmo `configureApp` do `main.ts`, então validação, prefixo,
- * versionamento e tratamento de erro são idênticos aos de produção. Um helper
- * que montasse a aplicação por conta própria testaria outra coisa.
+ * versionamento e tratamento de erro são idênticos aos de produção. Só o envio
+ * de e-mail é trocado por uma caixa de saída em memória.
  */
 export async function createTestApp(): Promise<TestContext> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const outbox: MailMessage[] = [];
+
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(MailService)
+    .useValue({ send: async (message: MailMessage) => void outbox.push(message) })
+    .compile();
 
   const app = moduleRef.createNestApplication({ bufferLogs: true });
   configureApp(app);
@@ -36,6 +44,7 @@ export async function createTestApp(): Promise<TestContext> {
     app,
     prisma,
     http: request(app.getHttpServer()),
+    outbox,
     close: async () => {
       await prisma.truncateAll();
       await app.close();
@@ -47,51 +56,49 @@ export const API = '/api/v1';
 
 export interface TestUser {
   id: string;
+  name: string;
   email: string;
+  registration: string;
   password: string;
   accessToken: string;
   refreshToken: string;
 }
 
-/** Cria uma conta pela própria API e devolve os tokens já emitidos. */
-export async function registerUser(
-  ctx: TestContext,
-  overrides: Partial<{ email: string; name: string; password: string }> = {},
-): Promise<TestUser> {
-  const payload = {
-    email:
-      overrides.email ?? `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@exemplo.com`,
-    name: overrides.name ?? 'Pessoa de Teste',
-    password: overrides.password ?? 'senhaSegura1',
-  };
-
-  const response = await ctx.http.post(`${API}/auth/register`).send(payload).expect(201);
-
-  return {
-    id: response.body.user.id,
-    email: payload.email,
-    password: payload.password,
-    accessToken: response.body.tokens.accessToken,
-    refreshToken: response.body.tokens.refreshToken,
-  };
-}
+let sequence = 0;
 
 /**
- * Promove a conta a ADMIN direto no banco e faz login de novo, porque o papel
- * viaja dentro do access token e o antigo continuaria valendo como USER.
+ * Cria uma conta direto no banco, já que não há autocadastro, e faz login pela
+ * API para obter tokens reais.
  */
-export async function registerAdmin(ctx: TestContext): Promise<TestUser> {
-  const user = await registerUser(ctx, { name: 'Administradora' });
+export async function createUser(
+  ctx: TestContext,
+  overrides: Partial<{ name: string; email: string; registration: string; password: string }> = {},
+): Promise<TestUser> {
+  sequence += 1;
+  const data = {
+    name: overrides.name ?? 'Pessoa de Teste',
+    email: overrides.email ?? `pessoa${sequence}.${Date.now() % 100000}@exemplo.com`,
+    registration: overrides.registration ?? String(900000 + sequence),
+    password: overrides.password ?? 'abc123',
+  };
 
-  await ctx.prisma.user.update({ where: { id: user.id }, data: { role: Role.ADMIN } });
+  const user = await ctx.prisma.user.create({
+    data: {
+      name: data.name,
+      email: data.email,
+      registration: data.registration,
+      passwordHash: await argon2.hash(data.password, { type: argon2.argon2id }),
+    },
+  });
 
   const response = await ctx.http
     .post(`${API}/auth/login`)
-    .send({ email: user.email, password: user.password })
+    .send({ login: data.email, password: data.password })
     .expect(200);
 
   return {
-    ...user,
+    id: user.id,
+    ...data,
     accessToken: response.body.tokens.accessToken,
     refreshToken: response.body.tokens.refreshToken,
   };

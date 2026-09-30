@@ -7,7 +7,7 @@ export const MAX_PAGE_SIZE = 100;
 /**
  * Query string de paginação compartilhada por todas as listagens.
  * Estenda esta classe no módulo para somar filtros próprios, como faz
- * `QueryTasksDto`.
+ * `QueryUsersDto`.
  */
 export class PaginationQueryDto {
   /** Pagina desejada, comecando em 1. */

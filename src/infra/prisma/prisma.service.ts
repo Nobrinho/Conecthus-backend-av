@@ -42,7 +42,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     }
 
     await this.refreshToken.deleteMany();
-    await this.task.deleteMany();
+    await this.passwordResetToken.deleteMany();
     await this.user.deleteMany();
   }
 }

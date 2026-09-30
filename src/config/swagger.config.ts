@@ -28,13 +28,13 @@ export function setupSwagger(
   const path = config.get('swagger.path', { infer: true });
 
   const documentConfig = new DocumentBuilder()
-    .setTitle('Backend NestJS Template')
+    .setTitle('WenLock API')
     .setDescription(
       [
-        'API REST de exemplo com autenticação JWT, controle de acesso por papel e CRUD paginado.',
+        'API do WenLock: autenticação JWT, recuperação de senha e CRUD de usuários.',
         '',
         '**Como testar por aqui:**',
-        '1. Chame `POST /auth/register` ou `POST /auth/login`.',
+        '1. Chame `POST /auth/login` com `{ "login": "millena.souza@wenlock.com", "password": "abc123" }` (usuária do seed; o login também aceita a matrícula `100001`).',
         '2. Copie o `accessToken` da resposta.',
         '3. Clique em **Authorize** no topo da página e cole o token.',
         '',
@@ -49,9 +49,8 @@ export function setupSwagger(
       bearerFormat: 'JWT',
       description: 'Cole apenas o access token, sem o prefixo "Bearer".',
     })
-    .addTag('auth', 'Cadastro, login, renovação e encerramento de sessão')
+    .addTag('auth', 'Login, renovação e encerramento de sessão, recuperação de senha')
     .addTag('users', 'Gestão de usuários')
-    .addTag('tasks', 'Recurso de exemplo: CRUD completo com paginação e ownership')
     .addTag('health', 'Sonda de saúde para orquestradores')
     .build();
 
@@ -62,7 +61,7 @@ export function setupSwagger(
   });
 
   SwaggerModule.setup(path, app, document, {
-    customSiteTitle: 'Backend NestJS Template - API',
+    customSiteTitle: 'WenLock API',
     jsonDocumentUrl: `${path}-json`,
     swaggerOptions: {
       // Mantém o token entre recarregamentos da página.

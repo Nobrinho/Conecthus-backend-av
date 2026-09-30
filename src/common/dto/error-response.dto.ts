@@ -13,6 +13,8 @@ export class ErrorResponseDto {
   path!: string;
   /** Momento do erro em ISO 8601. */
   timestamp!: string;
+  /** Campo que causou o erro, quando se aplica (ex.: `email` em um 409). */
+  field?: string;
   /** Mesmo id do header `x-request-id`, para casar com a linha de log. */
   requestId?: string;
 }

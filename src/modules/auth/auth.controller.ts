@@ -1,9 +1,9 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiConflictResponse,
-  ApiCreatedResponse,
+  ApiBadRequestResponse,
   ApiNoContentResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -13,12 +13,14 @@ import {
 import { CredentialRateLimit } from '../../common/decorators/credential-rate-limit.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { ErrorResponseDto } from '../../common/dto/error-response.dto.js';
 import { UserResponseDto } from '../users/dto/user-response.dto.js';
 import { AuthService } from './auth.service.js';
 import { AuthResponseDto } from './dto/auth-response.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
-import { RegisterDto } from './dto/register.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
@@ -26,29 +28,53 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
-  @Post('register')
-  @CredentialRateLimit()
-  @ApiOperation({
-    summary: 'Cria uma conta e já devolve os tokens',
-    description: 'O papel é sempre USER. Criar administradores é feito por POST /users.',
-  })
-  @ApiCreatedResponse({ type: AuthResponseDto })
-  @ApiConflictResponse({ description: 'Email já cadastrado' })
-  @ApiTooManyRequestsResponse({ description: 'Limite de tentativas excedido' })
-  register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
-    return this.authService.register(dto);
-  }
-
-  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @CredentialRateLimit()
-  @ApiOperation({ summary: 'Autentica e devolve o par de tokens' })
+  @ApiOperation({
+    summary: 'Autentica e devolve o par de tokens',
+    description: 'O campo `login` aceita o e-mail ou a matrícula.',
+  })
   @ApiOkResponse({ type: AuthResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Credenciais inválidas ou conta desativada' })
+  @ApiUnauthorizedResponse({
+    description: 'Usuário/Senha inválido(a) ou conta desativada',
+    type: ErrorResponseDto,
+  })
   @ApiTooManyRequestsResponse({ description: 'Limite de tentativas excedido' })
   login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     return this.authService.login(dto);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @CredentialRateLimit()
+  @ApiOperation({
+    summary: 'Envia o link de recuperação de senha',
+    description: 'O link leva à tela de redefinição do frontend e vale por tempo limitado.',
+  })
+  @ApiNoContentResponse({ description: 'E-mail enviado' })
+  @ApiNotFoundResponse({ description: 'E-mail não cadastrado', type: ErrorResponseDto })
+  @ApiTooManyRequestsResponse({ description: 'Limite de tentativas excedido' })
+  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @CredentialRateLimit()
+  @ApiOperation({
+    summary: 'Define uma nova senha a partir do link de recuperação',
+    description: 'O link é de uso único. Todas as sessões abertas da conta são encerradas.',
+  })
+  @ApiNoContentResponse({ description: 'Senha redefinida' })
+  @ApiBadRequestResponse({
+    description: 'Link inválido/expirado ou senha fora da regra',
+    type: ErrorResponseDto,
+  })
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    return this.authService.resetPassword(dto);
   }
 
   @Public()

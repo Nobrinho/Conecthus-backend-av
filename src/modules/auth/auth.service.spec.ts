@@ -1,12 +1,19 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { JwtService } from '@nestjs/jwt';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../../config/configuration.js';
 import type { HashService } from '../../infra/hash/hash.service.js';
-import { Role, type RefreshToken, type User } from '../../infra/prisma/prisma.client.js';
+import type { MailService } from '../../infra/mail/mail.service.js';
+import {
+  Role,
+  type PasswordResetToken,
+  type RefreshToken,
+  type User,
+} from '../../infra/prisma/prisma.client.js';
 import type { UsersService } from '../users/users.service.js';
-import { AuthService } from './auth.service.js';
+import { AuthService, INVALID_CREDENTIALS } from './auth.service.js';
+import type { PasswordResetTokensRepository } from './password-reset-tokens.repository.js';
 import type { RefreshTokensRepository } from './refresh-tokens.repository.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -15,11 +22,12 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   id: 'user-1',
   email: 'ana@exemplo.com',
   name: 'Ana',
+  registration: '809987',
   passwordHash: 'hash-da-senha',
   role: Role.USER,
   isActive: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
-  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  updatedAt: null,
   ...overrides,
 });
 
@@ -33,9 +41,21 @@ const buildStoredToken = (overrides: Partial<RefreshToken> = {}): RefreshToken =
   ...overrides,
 });
 
+const buildResetToken = (overrides: Partial<PasswordResetToken> = {}): PasswordResetToken => ({
+  id: 'reset-1',
+  tokenHash: 'hash-do-token',
+  userId: 'user-1',
+  expiresAt: new Date(Date.now() + ONE_HOUR_MS),
+  usedAt: null,
+  createdAt: new Date(),
+  ...overrides,
+});
+
 describe('AuthService', () => {
   let users: Record<string, ReturnType<typeof vi.fn>>;
   let refreshTokens: Record<string, ReturnType<typeof vi.fn>>;
+  let resetTokens: Record<string, ReturnType<typeof vi.fn>>;
+  let mail: Record<string, ReturnType<typeof vi.fn>>;
   let hash: Record<string, ReturnType<typeof vi.fn>>;
   let jwt: Record<string, ReturnType<typeof vi.fn>>;
   let service: AuthService;
@@ -43,9 +63,17 @@ describe('AuthService', () => {
   beforeEach(() => {
     users = {
       findEntityByEmail: vi.fn().mockResolvedValue(null),
+      findEntityByRegistration: vi.fn().mockResolvedValue(null),
       findEntityById: vi.fn().mockResolvedValue(buildUser()),
-      create: vi.fn(),
+      updatePassword: vi.fn().mockResolvedValue(undefined),
     };
+    resetTokens = {
+      create: vi.fn().mockResolvedValue(buildResetToken()),
+      findByHash: vi.fn(),
+      invalidatePendingForUser: vi.fn().mockResolvedValue({ count: 0 }),
+      markUsed: vi.fn().mockResolvedValue(buildResetToken({ usedAt: new Date() })),
+    };
+    mail = { send: vi.fn().mockResolvedValue(undefined) };
     refreshTokens = {
       create: vi.fn().mockResolvedValue(buildStoredToken()),
       findById: vi.fn(),
@@ -63,59 +91,32 @@ describe('AuthService', () => {
       decode: vi.fn().mockReturnValue({ exp: Math.floor((Date.now() + ONE_HOUR_MS) / 1000) }),
     };
 
+    const values: Record<string, unknown> = {
+      'passwordReset.ttlMinutes': 30,
+      'passwordReset.appUrl': 'http://app.local',
+    };
     const config = {
-      get: vi.fn((key: string) => `valor-de-${key}`),
+      get: vi.fn((key: string) => values[key] ?? `valor-de-${key}`),
     } as unknown as ConfigService<AppConfig, true>;
 
     service = new AuthService(
       users as unknown as UsersService,
       refreshTokens as unknown as RefreshTokensRepository,
+      resetTokens as unknown as PasswordResetTokensRepository,
       hash as unknown as HashService,
+      mail as unknown as MailService,
       jwt as unknown as JwtService,
       config,
     );
   });
 
-  describe('register', () => {
-    it('recusa email já cadastrado', async () => {
-      users['findEntityByEmail']!.mockResolvedValue(buildUser());
-
-      await expect(
-        service.register({ email: 'ana@exemplo.com', name: 'Ana', password: 'senhaSegura1' }),
-      ).rejects.toBeInstanceOf(ConflictException);
-
-      expect(users['create']).not.toHaveBeenCalled();
-    });
-
-    it('persiste o hash do refresh token, nunca o token em si', async () => {
-      users['create']!.mockResolvedValue({
-        id: 'user-1',
-        email: 'ana@exemplo.com',
-        role: Role.USER,
-      });
-
-      const result = await service.register({
-        email: 'ana@exemplo.com',
-        name: 'Ana',
-        password: 'senhaSegura1',
-      });
-
-      expect(result.tokens.tokenType).toBe('Bearer');
-      expect(refreshTokens['create']).toHaveBeenCalledWith(
-        expect.objectContaining({ tokenHash: 'hash-do-token', userId: 'user-1' }),
-      );
-      const persisted = refreshTokens['create']!.mock.calls[0][0];
-      expect(persisted.tokenHash).not.toBe(result.tokens.refreshToken);
-    });
-  });
-
   describe('login', () => {
-    it('recusa email inexistente sem revelar que a conta não existe', async () => {
+    it('recusa usuário inexistente com a mesma mensagem de senha errada', async () => {
       users['findEntityByEmail']!.mockResolvedValue(null);
 
       await expect(
-        service.login({ email: 'ninguem@exemplo.com', password: 'senhaSegura1' }),
-      ).rejects.toThrowError(new UnauthorizedException('Email ou senha inválidos').message);
+        service.login({ login: 'ninguem@exemplo.com', password: 'abc123' }),
+      ).rejects.toThrowError(INVALID_CREDENTIALS);
 
       // Mesmo sem usuário, um hash é verificado para igualar o tempo de resposta.
       expect(hash['verify']).toHaveBeenCalled();
@@ -126,7 +127,7 @@ describe('AuthService', () => {
       hash['verify']!.mockResolvedValue(false);
 
       await expect(
-        service.login({ email: 'ana@exemplo.com', password: 'errada' }),
+        service.login({ login: 'ana@exemplo.com', password: 'errada' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
@@ -134,17 +135,85 @@ describe('AuthService', () => {
       users['findEntityByEmail']!.mockResolvedValue(buildUser({ isActive: false }));
 
       await expect(
-        service.login({ email: 'ana@exemplo.com', password: 'senhaSegura1' }),
+        service.login({ login: 'ana@exemplo.com', password: 'abc123' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('emite tokens quando as credenciais conferem', async () => {
       users['findEntityByEmail']!.mockResolvedValue(buildUser());
 
-      const result = await service.login({ email: 'ana@exemplo.com', password: 'senhaSegura1' });
+      const result = await service.login({ login: 'ana@exemplo.com', password: 'abc123' });
 
       expect(result.user.email).toBe('ana@exemplo.com');
       expect(result.tokens.accessToken).toBe('token-assinado');
+    });
+
+    it('aceita a matrícula no lugar do e-mail', async () => {
+      users['findEntityByRegistration']!.mockResolvedValue(buildUser());
+
+      const result = await service.login({ login: '809987', password: 'abc123' });
+
+      expect(users['findEntityByRegistration']).toHaveBeenCalledWith('809987');
+      expect(users['findEntityByEmail']).not.toHaveBeenCalled();
+      expect(result.user.registration).toBe('809987');
+    });
+
+    it('persiste o hash do refresh token, nunca o token em si', async () => {
+      users['findEntityByEmail']!.mockResolvedValue(buildUser());
+
+      const result = await service.login({ login: 'ana@exemplo.com', password: 'abc123' });
+
+      const persisted = refreshTokens['create']!.mock.calls[0]![0];
+      expect(persisted.tokenHash).toBe('hash-do-token');
+      expect(persisted.tokenHash).not.toBe(result.tokens.refreshToken);
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('responde 404 quando o e-mail não está cadastrado', async () => {
+      await expect(service.forgotPassword({ email: 'ninguem@exemplo.com' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mail['send']).not.toHaveBeenCalled();
+    });
+
+    it('guarda só o hash do token e envia o link por e-mail', async () => {
+      users['findEntityByEmail']!.mockResolvedValue(buildUser());
+
+      await service.forgotPassword({ email: 'ana@exemplo.com' });
+
+      expect(resetTokens['invalidatePendingForUser']).toHaveBeenCalledWith('user-1');
+      expect(resetTokens['create']).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1', tokenHash: 'hash-do-token' }),
+      );
+      const message = mail['send']!.mock.calls[0]![0];
+      expect(message.to).toBe('ana@exemplo.com');
+      expect(message.text).toMatch(/http:\/\/app\.local\/redefinir-senha\?token=[\w-]+/);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('troca a senha, consome o token e encerra as sessões', async () => {
+      resetTokens['findByHash']!.mockResolvedValue(buildResetToken());
+
+      await service.resetPassword({ token: 'token', password: 'xyz789' });
+
+      expect(resetTokens['markUsed']).toHaveBeenCalledWith('reset-1');
+      expect(users['updatePassword']).toHaveBeenCalledWith('user-1', 'xyz789');
+      expect(refreshTokens['revokeAllForUser']).toHaveBeenCalledWith('user-1');
+    });
+
+    it.each([
+      ['inexistente', null],
+      ['já usado', buildResetToken({ usedAt: new Date() })],
+      ['vencido', buildResetToken({ expiresAt: new Date(Date.now() - 1000) })],
+    ])('recusa token %s', async (_, stored) => {
+      resetTokens['findByHash']!.mockResolvedValue(stored);
+
+      await expect(
+        service.resetPassword({ token: 'token', password: 'xyz789' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(users['updatePassword']).not.toHaveBeenCalled();
     });
   });
 

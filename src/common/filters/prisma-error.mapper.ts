@@ -24,8 +24,12 @@ export function mapPrismaError(exception: unknown): HttpException | null {
   switch (exception.code) {
     case 'P2002': {
       const target = exception.meta?.['target'];
-      const fields = Array.isArray(target) ? target.join(', ') : String(target ?? 'campo');
-      return new ConflictException(`Ja existe um registro com o mesmo valor em: ${fields}`);
+      const fields = Array.isArray(target) ? target.map(String) : [String(target ?? 'campo')];
+      return new ConflictException({
+        message: `Já existe um registro com o mesmo valor em: ${fields.join(', ')}`,
+        error: 'Conflict',
+        field: fields[0],
+      });
     }
     case 'P2025':
       return new NotFoundException('Registro não encontrado');

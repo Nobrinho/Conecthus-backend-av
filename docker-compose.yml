@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: nest-template-db
+    container_name: wenlock-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -21,7 +21,7 @@ services:
   # possam truncar as tabelas sem tocar nos dados de desenvolvimento.
   db-test:
     image: postgres:17-alpine
-    container_name: nest-template-db-test
+    container_name: wenlock-db-test
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -37,19 +37,31 @@ services:
       timeout: 5s
       retries: 10
 
-  # Aplica as migrations e sai. Roda a partir do estágio `build`, que é o
-  # único com a CLI do Prisma. Deixar isso em um serviço próprio, e não no
-  # start da API, evita que várias réplicas tentem migrar o banco ao mesmo tempo.
+  # Caixa de entrada de desenvolvimento: recebe os e-mails de recuperação de
+  # senha via SMTP (porta 1025) e mostra tudo em http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: wenlock-mailpit
+    restart: unless-stopped
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
+  # Aplica as migrations, popula o banco com o seed e sai. Roda a partir do
+  # estágio `build`, que é o único com a CLI do Prisma. Deixar isso em um
+  # serviço próprio, e não no start da API, evita que várias réplicas tentem
+  # migrar o banco ao mesmo tempo. O seed é idempotente.
   migrate:
     build:
       context: .
       target: build
-    container_name: nest-template-migrate
-    command: npx prisma migrate deploy
+    container_name: wenlock-migrate
+    command: sh -c "npx prisma migrate deploy && npm run db:seed"
     depends_on:
       db:
         condition: service_healthy
     environment:
+      NODE_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@db:5432/app?schema=public
     restart: 'no'
 
@@ -59,18 +71,20 @@ services:
     build:
       context: .
       target: runner
-    container_name: nest-template-api
+    container_name: wenlock-api
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     environment:
       NODE_ENV: production
       PORT: 3000
       API_PREFIX: api
-      CORS_ORIGINS: '*'
+      CORS_ORIGINS: http://localhost:3001
       LOG_LEVEL: info
       DATABASE_URL: postgresql://postgres:postgres@db:5432/app?schema=public
       JWT_ACCESS_SECRET: troque-este-segredo-de-access-em-producao-0000000
@@ -81,6 +95,11 @@ services:
       THROTTLE_LIMIT: 120
       THROTTLE_CREDENTIALS_TTL: 60000
       THROTTLE_CREDENTIALS_LIMIT: 10
+      APP_URL: http://localhost:3001
+      PASSWORD_RESET_TTL_MINUTES: 30
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: WenLock <nao-responda@wenlock.local>
       SWAGGER_ENABLED: 'true'
       SWAGGER_PATH: docs
     ports:
