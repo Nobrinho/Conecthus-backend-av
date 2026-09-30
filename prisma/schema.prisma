@@ -22,26 +22,27 @@ enum Role {
   ADMIN
 }
 
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  DONE
-}
-
 model User {
   id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  name         String
+  /// Nome completo: apenas letras e espaços, até 30 caracteres.
+  name         String   @db.VarChar(30)
+  /// Email de login, sempre minúsculo. Até 40 caracteres.
+  email        String   @unique @db.VarChar(40)
+  /// Matrícula: 4 a 10 dígitos. Texto para preservar zeros à esquerda.
+  registration String   @unique @db.VarChar(10)
   /// Hash argon2id. Nunca sai da camada de repositorio.
   passwordHash String
   role         Role     @default(USER)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  /// Momento da última edição; nulo enquanto o cadastro nunca foi editado.
+  updatedAt    DateTime?
 
-  tasks         Task[]
-  refreshTokens RefreshToken[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
+  /// Acelera a busca por nome da listagem, que ordena por nome.
+  @@index([name])
   @@map("users")
 }
 
@@ -62,19 +63,17 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-/// Recurso de exemplo. Use-o como molde ao criar novos módulos de domínio.
-model Task {
-  id          String     @id @default(uuid()) @db.Uuid
-  title       String
-  description String?
-  status      TaskStatus @default(TODO)
-  dueDate     DateTime?
-  ownerId     String     @db.Uuid
-  owner       User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+/// Token de uso único para redefinir a senha. Como no refresh token, apenas o
+/// hash é persistido; o valor em claro só existe no link enviado por e-mail.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
-  @@index([ownerId, status])
-  @@index([createdAt])
-  @@map("tasks")
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
