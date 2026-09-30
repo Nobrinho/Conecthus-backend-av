@@ -1,9 +1,16 @@
-import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { AppConfig } from '../../config/configuration.js';
 import { HashService } from '../../infra/hash/hash.service.js';
+import { MailService } from '../../infra/mail/mail.service.js';
 import type {
   AccessTokenPayload,
   RefreshTokenPayload,
@@ -12,12 +19,20 @@ import type { User } from '../../infra/prisma/prisma.client.js';
 import { UserResponseDto } from '../users/dto/user-response.dto.js';
 import { UsersService } from '../users/users.service.js';
 import type { AuthResponseDto, AuthTokensDto } from './dto/auth-response.dto.js';
+import type { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import type { LoginDto } from './dto/login.dto.js';
-import type { RegisterDto } from './dto/register.dto.js';
+import type { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { PasswordResetTokensRepository } from './password-reset-tokens.repository.js';
 import { RefreshTokensRepository } from './refresh-tokens.repository.js';
 
 /** Dados mínimos necessários para assinar um par de tokens. */
 type TokenSubject = Pick<User, 'id' | 'email' | 'role'>;
+
+/** Mensagem única para usuário inexistente e senha errada, como no protótipo. */
+export const INVALID_CREDENTIALS = 'Usuário/Senha inválido(a)';
+
+/** Matrícula tem apenas dígitos; qualquer outra coisa é tratada como e-mail. */
+const REGISTRATION_PATTERN = /^\d+$/;
 
 @Injectable()
 export class AuthService {
@@ -29,34 +44,28 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly refreshTokens: RefreshTokensRepository,
+    private readonly resetTokens: PasswordResetTokensRepository,
     private readonly hash: HashService,
+    private readonly mail: MailService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
-  async register(dto: RegisterDto): Promise<AuthResponseDto> {
-    if (await this.users.findEntityByEmail(dto.email)) {
-      throw new ConflictException('Já existe uma conta com este email');
-    }
-
-    const user = await this.users.create(dto);
-
-    return { user, tokens: await this.issueTokens(user) };
-  }
-
   async login(dto: LoginDto): Promise<AuthResponseDto> {
-    const user = await this.users.findEntityByEmail(dto.email);
+    const user = REGISTRATION_PATTERN.test(dto.login)
+      ? await this.users.findEntityByRegistration(dto.login)
+      : await this.users.findEntityByEmail(dto.login);
 
     if (!user) {
-      // Verifica contra um hash falso para que um email inexistente leve o
-      // mesmo tempo de um email real com senha errada. Sem isso, o tempo de
-      // resposta revela quais emails estão cadastrados.
+      // Verifica contra um hash falso para que um usuário inexistente leve o
+      // mesmo tempo de um real com senha errada. Sem isso, o tempo de
+      // resposta revela quais logins estão cadastrados.
       await this.verifyAgainstDummyHash(dto.password);
-      throw new UnauthorizedException('Email ou senha inválidos');
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
     if (!(await this.hash.verify(user.passwordHash, dto.password))) {
-      throw new UnauthorizedException('Email ou senha inválidos');
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
     if (!user.isActive) {
@@ -149,6 +158,55 @@ export class AuthService {
     return UserResponseDto.fromEntity(user);
   }
 
+  /**
+   * Gera um link de redefinição de senha e envia por e-mail.
+   *
+   * O protótipo exibe "e-mail não cadastrado" quando o endereço não existe,
+   * então a API responde 404 nesse caso. Isso revela quais e-mails têm conta;
+   * o risco é mitigado pelo rate limit estrito desta rota e registrado nas
+   * decisões do README.
+   */
+  async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
+    const user = await this.users.findEntityByEmail(dto.email);
+
+    if (!user || !user.isActive) {
+      throw new NotFoundException('E-mail não cadastrado');
+    }
+
+    const token = randomBytes(32).toString('base64url');
+    const ttlMinutes = this.config.get('passwordReset.ttlMinutes', { infer: true });
+
+    await this.resetTokens.invalidatePendingForUser(user.id);
+    await this.resetTokens.create({
+      userId: user.id,
+      tokenHash: this.hash.hashToken(token),
+      expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+    });
+
+    const appUrl = this.config.get('passwordReset.appUrl', { infer: true });
+    const link = `${appUrl}/redefinir-senha?token=${token}`;
+
+    await this.mail.send({
+      to: user.email,
+      subject: 'WenLock - Recuperação de senha',
+      text: `Olá, ${user.name}! Para criar uma nova senha acesse ${link} (válido por ${ttlMinutes} minutos). Se você não pediu a recuperação, ignore este e-mail.`,
+      html: `<p>Olá, ${escapeHtml(user.name)}!</p><p>Para criar uma nova senha, <a href="${link}">clique aqui</a>. O link vale por ${ttlMinutes} minutos.</p><p>Se você não pediu a recuperação, ignore este e-mail.</p>`,
+    });
+  }
+
+  /** Troca a senha a partir de um token válido e encerra as sessões abertas. */
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const stored = await this.resetTokens.findByHash(this.hash.hashToken(dto.token));
+
+    if (!stored || stored.usedAt !== null || stored.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Link de recuperação inválido ou expirado');
+    }
+
+    await this.resetTokens.markUsed(stored.id);
+    await this.users.updatePassword(stored.userId, dto.password);
+    await this.refreshTokens.revokeAllForUser(stored.userId);
+  }
+
   private async issueTokens(user: TokenSubject): Promise<AuthTokensDto> {
     const jti = randomUUID();
 
@@ -205,4 +263,8 @@ export class AuthService {
     this.dummyPasswordHash ??= await this.hash.hash('conta-inexistente-apenas-para-igualar-tempo');
     await this.hash.verify(this.dummyPasswordHash, password);
   }
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }

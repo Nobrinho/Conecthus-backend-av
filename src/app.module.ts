@@ -11,11 +11,11 @@ import { RolesGuard } from './common/guards/roles.guard.js';
 import { configuration, type AppConfig } from './config/configuration.js';
 import { buildLoggerOptions } from './infra/logger/logger.config.js';
 import { HashModule } from './infra/hash/hash.module.js';
+import { MailModule } from './infra/mail/mail.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard.js';
 import { HealthModule } from './modules/health/health.module.js';
-import { TasksModule } from './modules/tasks/tasks.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 
 @Module({
@@ -62,10 +62,10 @@ import { UsersModule } from './modules/users/users.module.js';
 
     PrismaModule,
     HashModule,
+    MailModule,
 
     AuthModule,
     UsersModule,
-    TasksModule,
     HealthModule,
   ],
   providers: [

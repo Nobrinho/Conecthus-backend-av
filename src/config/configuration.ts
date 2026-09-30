@@ -35,6 +35,19 @@ export interface AppConfig {
     enabled: boolean;
     path: string;
   };
+  passwordReset: {
+    /** Endereço do frontend onde fica a tela de redefinição de senha. */
+    appUrl: string;
+    ttlMinutes: number;
+  };
+  mail: {
+    /** `null` desliga o envio real: o conteúdo do e-mail vai para o log. */
+    host: string | null;
+    port: number;
+    user: string | null;
+    password: string | null;
+    from: string;
+  };
 }
 
 export const configuration = (): AppConfig => {
@@ -70,6 +83,17 @@ export const configuration = (): AppConfig => {
     swagger: {
       enabled: env.SWAGGER_ENABLED,
       path: env.SWAGGER_PATH,
+    },
+    passwordReset: {
+      appUrl: env.APP_URL.replace(/\/$/, ''),
+      ttlMinutes: env.PASSWORD_RESET_TTL_MINUTES,
+    },
+    mail: {
+      host: env.SMTP_HOST || null,
+      port: env.SMTP_PORT,
+      user: env.SMTP_USER || null,
+      password: env.SMTP_PASSWORD || null,
+      from: env.MAIL_FROM,
     },
   };
 };

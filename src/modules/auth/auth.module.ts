@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { UsersModule } from '../users/users.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
+import { PasswordResetTokensRepository } from './password-reset-tokens.repository.js';
 import { RefreshTokensRepository } from './refresh-tokens.repository.js';
 import { JWT_ACCESS_STRATEGY, JwtAccessStrategy } from './strategies/jwt-access.strategy.js';
 
@@ -16,7 +17,12 @@ import { JWT_ACCESS_STRATEGY, JwtAccessStrategy } from './strategies/jwt-access.
     JwtModule.register({}),
   ],
   controllers: [AuthController],
-  providers: [AuthService, RefreshTokensRepository, JwtAccessStrategy],
+  providers: [
+    AuthService,
+    RefreshTokensRepository,
+    PasswordResetTokensRepository,
+    JwtAccessStrategy,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}
