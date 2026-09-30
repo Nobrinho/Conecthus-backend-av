@@ -34,9 +34,9 @@ export const buildLoggerOptions = (config: ConfigService<AppConfig, true>): Para
           'req.headers.authorization',
           'req.headers.cookie',
           'req.body.password',
-          'req.body.currentPassword',
-          'req.body.newPassword',
           'req.body.refreshToken',
+          // Token do link de redefinição de senha: vale como credencial.
+          'req.body.token',
           'res.headers["set-cookie"]',
         ],
         censor: '[redigido]',
