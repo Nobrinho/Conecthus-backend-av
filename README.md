@@ -16,8 +16,9 @@ API REST do **WenLock**, sistema de controle de acesso com CRUD completo de usu�
 | Documentar com Swagger UI | `/docs`, com exemplos, schemas e todas as respostas de erro de cada rota |
 | Banco relacional (MySQL ou PostgreSQL) | PostgreSQL 17 com Prisma 7 |
 | Tabelas para os dados dos usuários | `prisma/schema.prisma` + migration em `prisma/migrations` (tabela `users`) |
-| Nome completo só com letras · E-mail válido · Matrícula só números · Senha 6 alfanuméricos · todos obrigatórios | `src/modules/users/user.rules.ts` + `dto/create-user.dto.ts` (o frontend repete as mesmas regras) |
-| Pesquisa por nome e paginação | `GET /users?search=&page=`, 15 por página, em ordem alfabética |
+| Nome só letras · E-mail válido · Matrícula só números · Senha 6 alfanuméricos · todos obrigatórios | `src/modules/users/user.rules.ts` + `dto/create-user.dto.ts` (o frontend repete as mesmas regras). Além do PDF: o nome exige nome e sobrenome ("Nome Completo" no protótipo) |
+| Pesquisa por nome e paginação | `GET /users?search=&page=&limit=`, em ordem alfabética. `limit` aceita 10, 15, 50, 80 ou 100 (padrão 10), os mesmos do seletor "Itens por página" |
+| Deletar usuário | `DELETE /users/:id`. Além do PDF: ninguém exclui a própria conta (403) |
 | Login e recuperação de senha (telas do protótipo) | `src/modules/auth`: JWT + refresh rotacionado, `forgot-password` e `reset-password` por e-mail |
 
 ---
@@ -78,7 +79,7 @@ Todas as rotas ficam sob `/api/v1`. Tudo exige `Authorization: Bearer <accessTok
 | Método | Rota | O que faz |
 | --- | --- | --- |
 | `POST` | `/users` | Cadastra. 400 se algum campo fere as regras; 409 se o e-mail ou a matrícula já existem, com `field` indicando qual. |
-| `GET` | `/users` | Lista paginada. `search` (parte do nome, sem diferenciar maiúsculas), `page` (a partir de 1), `limit` (padrão 15), `order` (`asc` por padrão). |
+| `GET` | `/users` | Lista paginada. `search` (parte do nome, sem diferenciar maiúsculas), `page` (a partir de 1), `limit` (10, 15, 50, 80 ou 100; padrão 10; outro valor responde 400), `order` (`asc` por padrão). |
 | `GET` | `/users/:id` | Busca pelo id (UUID). 404 se não existe. |
 | `PATCH` | `/users/:id` | Atualização parcial. Sem `password`, a senha atual é mantida. Grava `updatedAt`. |
 | `DELETE` | `/users/:id` | Remove e encerra as sessões do usuário em cascata. Responde 204. 403 se o id é o do próprio usuário logado. |
@@ -142,7 +143,7 @@ Mensagens em português. Campos não declarados no DTO são recusados com 400 (`
 ```json
 {
   "data": [],
-  "meta": { "total": 31, "page": 1, "limit": 15, "totalPages": 3, "hasNextPage": true, "hasPreviousPage": false }
+  "meta": { "total": 31, "page": 1, "limit": 10, "totalPages": 4, "hasNextPage": true, "hasPreviousPage": false }
 }
 ```
 
@@ -201,6 +202,7 @@ Chaves UUID; as tabelas de token caem em cascata quando o usuário é removido.
 - **`updatedAt` nulo na criação**, em vez do `@updatedAt` automático do Prisma, para diferenciar "nunca editado" na tela Visualizar.
 - **Datas com fuso (`timestamptz`):** o banco guarda o instante com fuso, então clientes de banco mostram o horário local de quem consulta. A API responde em ISO 8601 UTC (`...Z`) e o frontend converte para o fuso do navegador.
 - **Ninguém exclui a própria conta:** `DELETE /users/:id` com o id da sessão responde 403 ("Não é possível excluir o próprio usuário"). A regra fica na API, não só na tela, porque o pedido pode chegar por outro caminho.
+- **Itens por página:** o padrão é 10 para a lista caber na tela sem rolagem e a paginação ficar sempre visível; 15 (o valor do protótipo) continua disponível no seletor.
 - **Busca só por nome**, conforme o PDF (o template buscava também por e-mail).
 - **Módulo de exemplo `tasks` removido** para o código ficar focado no que é avaliado.
 
@@ -267,13 +269,13 @@ Cada módulo separa responsabilidades: o **controller** só roteia e documenta, 
 ## Testes
 
 ```bash
-npm test                        # 29 testes de unidade, sem banco
+npm test                        # 30 testes de unidade, sem banco
 docker compose up -d db-test
-npm run test:e2e                # 45 testes e2e contra Postgres real
+npm run test:e2e                # 48 testes e2e contra Postgres real
 ```
 
-- **Unidade:** `UsersService` (hash, 409 com campo, busca só por nome, paginação, senha opcional na edição) e `AuthService` (login por e-mail e por matrícula, mensagem única, rotação e reuso de refresh, forgot/reset com token de uso único).
-- **E2E:** sobem a aplicação inteira com o mesmo `configureApp` do `main.ts`. Cobrem cada regra de validação campo a campo (inclusive nomes acentuados e limites), obrigatoriedade, 409 por e-mail (sem diferenciar maiúsculas) e matrícula, paginação de 15 em ordem alfabética, busca, 404/400 por id, edição parcial com e sem senha, exclusão (e o 403 ao excluir a si mesmo), 401 sem token e o fluxo completo de recuperação de senha. O envio de e-mail é trocado por uma caixa de saída em memória.
+- **Unidade:** `UsersService` (hash, 409 com campo, busca só por nome, paginação, senha opcional na edição, recusa de excluir a si mesmo) e `AuthService` (login por e-mail e por matrícula, mensagem única, rotação e reuso de refresh, forgot/reset com token de uso único).
+- **E2E:** sobem a aplicação inteira com o mesmo `configureApp` do `main.ts`. Cobrem cada regra de validação campo a campo (inclusive nomes acentuados e limites), obrigatoriedade, 409 por e-mail (sem diferenciar maiúsculas) e matrícula, paginação (padrão de 10, tamanhos aceitos e 400 para os demais) em ordem alfabética, busca, 404/400 por id, edição parcial com e sem senha, exclusão (e o 403 ao excluir a si mesmo), 401 sem token e o fluxo completo de recuperação de senha. O envio de e-mail é trocado por uma caixa de saída em memória.
 
 O **CI** (`.github/workflows/ci.yml`) roda lint, formatação, typecheck, unidade e build, e os e2e com um Postgres de serviço.
 

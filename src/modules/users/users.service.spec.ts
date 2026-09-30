@@ -76,17 +76,17 @@ describe('UsersService', () => {
   describe('findAll', () => {
     it('filtra só pelo nome e monta o envelope paginado', async () => {
       const query = Object.assign(new QueryUsersDto(), { search: 'adri', page: 2 });
-      repository['findManyPaginated']!.mockResolvedValue([[buildUser()], 16]);
+      repository['findManyPaginated']!.mockResolvedValue([[buildUser()], 11]);
 
       const result = await service.findAll(query);
 
       expect(repository['findManyPaginated']).toHaveBeenCalledWith({
         where: { name: { contains: 'adri', mode: 'insensitive' } },
-        skip: 15,
-        take: 15,
+        skip: 10,
+        take: 10,
         order: 'asc',
       });
-      expect(result.meta).toMatchObject({ total: 16, page: 2, limit: 15, totalPages: 2 });
+      expect(result.meta).toMatchObject({ total: 11, page: 2, limit: 10, totalPages: 2 });
     });
   });
 

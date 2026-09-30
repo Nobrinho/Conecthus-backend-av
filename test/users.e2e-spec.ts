@@ -114,22 +114,32 @@ describe('Usuários (e2e)', () => {
       }
     });
 
-    it('pagina de 15 em 15, em ordem alfabética', async () => {
+    it('pagina de 10 em 10 por padrão, em ordem alfabética', async () => {
       const first = await ctx.http
         .get(`${API}/users`)
         .set('Authorization', bearer(actor))
         .expect(200);
 
-      expect(first.body.data).toHaveLength(15);
-      expect(first.body.meta).toMatchObject({ total: 21, page: 1, limit: 15, totalPages: 2 });
+      expect(first.body.data).toHaveLength(10);
+      expect(first.body.meta).toMatchObject({ total: 21, page: 1, limit: 10, totalPages: 3 });
       const names = first.body.data.map((u: { name: string }) => u.name);
       expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
 
       const second = await ctx.http
-        .get(`${API}/users?page=2`)
+        .get(`${API}/users?page=3`)
         .set('Authorization', bearer(actor))
         .expect(200);
-      expect(second.body.data).toHaveLength(6);
+      expect(second.body.data).toHaveLength(1);
+    });
+
+    it('aceita só os tamanhos do seletor (10, 15, 50, 80, 100)', async () => {
+      const fifteen = await ctx.http
+        .get(`${API}/users?limit=15`)
+        .set('Authorization', bearer(actor))
+        .expect(200);
+      expect(fifteen.body.data).toHaveLength(15);
+
+      await ctx.http.get(`${API}/users?limit=20`).set('Authorization', bearer(actor)).expect(400);
     });
 
     it('busca por parte do nome sem diferenciar maiúsculas', async () => {
