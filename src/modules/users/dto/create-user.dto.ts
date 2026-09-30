@@ -6,7 +6,7 @@ import { USER_RULES } from '../user.rules.js';
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class CreateUserDto {
-  /** Nome completo. Apenas letras e espaços. */
+  /** Nome completo (nome e sobrenome). Apenas letras e espaços. */
   @Transform(trim)
   @IsString()
   @IsNotEmpty({ message: 'O nome é obrigatório' })
@@ -14,6 +14,7 @@ export class CreateUserDto {
     message: `O nome deve ter no máximo ${USER_RULES.name.maxLength} caracteres`,
   })
   @Matches(USER_RULES.name.pattern, { message: USER_RULES.name.message })
+  @Matches(USER_RULES.name.fullNamePattern, { message: USER_RULES.name.fullNameMessage })
   @ApiProperty({ example: 'Adriano Machado Souza', maxLength: USER_RULES.name.maxLength })
   name!: string;
 

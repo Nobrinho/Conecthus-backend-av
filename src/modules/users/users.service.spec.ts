@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HashService } from '../../infra/hash/hash.service.js';
 import { Role, type User } from '../../infra/prisma/prisma.client.js';
@@ -118,7 +118,13 @@ describe('UsersService', () => {
     it('recusa usuário inexistente', async () => {
       repository['findById']!.mockResolvedValue(null);
 
-      await expect(service.remove('x')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.remove('x', 'ator')).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository['delete']).not.toHaveBeenCalled();
+    });
+
+    it('recusa excluir o próprio usuário', async () => {
+      await expect(service.remove('eu', 'eu')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository['findById']).not.toHaveBeenCalled();
       expect(repository['delete']).not.toHaveBeenCalled();
     });
   });

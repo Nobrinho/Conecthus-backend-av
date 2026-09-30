@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { buildPaginatedResult, type PaginatedDto } from '../../common/dto/paginated-result.dto.js';
 import { HashService } from '../../infra/hash/hash.service.js';
 import type { Prisma, User } from '../../infra/prisma/prisma.client.js';
@@ -69,7 +74,14 @@ export class UsersService {
     return UserResponseDto.fromEntity(user);
   }
 
-  async remove(id: string): Promise<void> {
+  /**
+   * Remove um usuário. Ninguém exclui a própria conta: perderia o acesso no
+   * meio da sessão e poderia deixar o sistema sem ninguém para administrá-lo.
+   */
+  async remove(id: string, actorId: string): Promise<void> {
+    if (id === actorId) {
+      throw new ForbiddenException('Não é possível excluir o próprio usuário');
+    }
     await this.findEntityOrFail(id);
     await this.repository.delete(id);
   }

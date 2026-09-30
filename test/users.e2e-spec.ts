@@ -58,6 +58,7 @@ describe('Usuários (e2e)', () => {
       ['nome com números', { name: 'Adriano 2' }, 'O nome deve conter apenas letras'],
       ['nome com símbolos', { name: 'Adriano!' }, 'O nome deve conter apenas letras'],
       ['nome acima de 30', { name: 'A'.repeat(31) }, 'no máximo 30'],
+      ['só o primeiro nome', { name: 'Adriano' }, 'Informe o nome completo'],
       ['e-mail inválido', { email: 'adriano@' }, 'Informe um e-mail válido'],
       ['e-mail acima de 40', { email: `${'a'.repeat(35)}@x.com` }, 'no máximo 40'],
       ['matrícula com letras', { registration: '80a987' }, 'apenas números'],
@@ -219,6 +220,21 @@ describe('Usuários (e2e)', () => {
         .expect(409);
 
       expect(response.body.field).toBe('registration');
+    });
+
+    it('não deixa excluir o próprio usuário', async () => {
+      const response = await ctx.http
+        .delete(`${API}/users/${actor.id}`)
+        .set('Authorization', bearer(actor))
+        .expect(403);
+
+      expect(JSON.stringify(response.body.message)).toContain(
+        'Não é possível excluir o próprio usuário',
+      );
+      await ctx.http
+        .get(`${API}/users/${actor.id}`)
+        .set('Authorization', bearer(actor))
+        .expect(200);
     });
 
     it('exclui e depois responde 404', async () => {
