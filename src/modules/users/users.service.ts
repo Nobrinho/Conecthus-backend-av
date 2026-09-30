@@ -1,14 +1,19 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { buildPaginatedResult, type PaginatedDto } from '../../common/dto/paginated-result.dto.js';
-import type { AuthenticatedUser } from '../../common/types/authenticated-user.js';
-import { Prisma, Role, type User } from '../../infra/prisma/prisma.client.js';
 import { HashService } from '../../infra/hash/hash.service.js';
-import type { ChangePasswordDto } from './dto/change-password.dto.js';
+import type { Prisma, User } from '../../infra/prisma/prisma.client.js';
 import type { CreateUserDto } from './dto/create-user.dto.js';
 import type { QueryUsersDto } from './dto/query-users.dto.js';
 import { UserResponseDto } from './dto/user-response.dto.js';
 import type { UpdateUserDto } from './dto/update-user.dto.js';
 import { UsersRepository } from './users.repository.js';
+
+type UniqueField = 'email' | 'registration';
+
+const CONFLICT_MESSAGES: Record<UniqueField, string> = {
+  email: 'Já existe um usuário com este e-mail',
+  registration: 'Já existe um usuário com esta matrícula',
+};
 
 @Injectable()
 export class UsersService {
@@ -18,30 +23,22 @@ export class UsersService {
   ) {}
 
   async create(dto: CreateUserDto): Promise<UserResponseDto> {
+    await this.assertUnique(dto);
+
     const user = await this.repository.create({
-      email: dto.email.toLowerCase(),
       name: dto.name,
+      email: dto.email,
+      registration: dto.registration,
       passwordHash: await this.hash.hash(dto.password),
-      role: dto.role ?? Role.USER,
-      isActive: dto.isActive ?? true,
     });
 
     return UserResponseDto.fromEntity(user);
   }
 
   async findAll(query: QueryUsersDto): Promise<PaginatedDto<UserResponseDto>> {
-    const where: Prisma.UserWhereInput = {
-      ...(query.role ? { role: query.role } : {}),
-      ...(query.isActive === undefined ? {} : { isActive: query.isActive }),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search, mode: 'insensitive' } },
-              { email: { contains: query.search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    };
+    const where: Prisma.UserWhereInput = query.search
+      ? { name: { contains: query.search, mode: 'insensitive' } }
+      : {};
 
     const [users, total] = await this.repository.findManyPaginated({
       where,
@@ -53,48 +50,23 @@ export class UsersService {
     return buildPaginatedResult(users.map(UserResponseDto.fromEntity), total, query);
   }
 
-  async findOne(id: string, actor: AuthenticatedUser): Promise<UserResponseDto> {
-    this.assertCanManage(id, actor);
+  async findOne(id: string): Promise<UserResponseDto> {
     return UserResponseDto.fromEntity(await this.findEntityOrFail(id));
   }
 
-  async update(id: string, dto: UpdateUserDto, actor: AuthenticatedUser): Promise<UserResponseDto> {
-    this.assertCanManage(id, actor);
-
-    // Só um administrador muda papel ou status de conta; do contrário qualquer
-    // usuário poderia se promover editando o próprio cadastro.
-    if ((dto.role !== undefined || dto.isActive !== undefined) && actor.role !== Role.ADMIN) {
-      throw new ForbiddenException('Apenas administradores podem alterar papel ou status');
-    }
-
+  async update(id: string, dto: UpdateUserDto): Promise<UserResponseDto> {
     await this.findEntityOrFail(id);
+    await this.assertUnique(dto, id);
 
     const user = await this.repository.update(id, {
-      ...(dto.email === undefined ? {} : { email: dto.email.toLowerCase() }),
       ...(dto.name === undefined ? {} : { name: dto.name }),
-      ...(dto.role === undefined ? {} : { role: dto.role }),
-      ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
+      ...(dto.email === undefined ? {} : { email: dto.email }),
+      ...(dto.registration === undefined ? {} : { registration: dto.registration }),
+      ...(dto.password === undefined ? {} : { passwordHash: await this.hash.hash(dto.password) }),
+      updatedAt: new Date(),
     });
 
     return UserResponseDto.fromEntity(user);
-  }
-
-  async changePassword(
-    id: string,
-    dto: ChangePasswordDto,
-    actor: AuthenticatedUser,
-  ): Promise<void> {
-    if (id !== actor.id) {
-      throw new ForbiddenException('Voce só pode alterar a própria senha');
-    }
-
-    const user = await this.findEntityOrFail(id);
-
-    if (!(await this.hash.verify(user.passwordHash, dto.currentPassword))) {
-      throw new ForbiddenException('Senha atual incorreta');
-    }
-
-    await this.repository.update(id, { passwordHash: await this.hash.hash(dto.newPassword) });
   }
 
   async remove(id: string): Promise<void> {
@@ -103,30 +75,62 @@ export class UsersService {
   }
 
   /**
-   * Devolve a entidade crua, com `passwordHash`. Existe para o AuthService e
-   * para as estratégias do Passport; controllers nunca devem usá-la.
+   * Devolvem a entidade crua, com `passwordHash`. Existem para o AuthService e
+   * para as estratégias do Passport; controllers nunca devem usá-las.
    */
   findEntityByEmail(email: string): Promise<User | null> {
     return this.repository.findByEmail(email);
+  }
+
+  findEntityByRegistration(registration: string): Promise<User | null> {
+    return this.repository.findByRegistration(registration);
   }
 
   findEntityById(id: string): Promise<User | null> {
     return this.repository.findById(id);
   }
 
+  async updatePassword(id: string, password: string): Promise<void> {
+    await this.repository.update(id, { passwordHash: await this.hash.hash(password) });
+  }
+
   private async findEntityOrFail(id: string): Promise<User> {
     const user = await this.repository.findById(id);
 
     if (!user) {
-      throw new NotFoundException(`Usuario ${id} não encontrado`);
+      throw new NotFoundException('Usuário não encontrado');
     }
 
     return user;
   }
 
-  private assertCanManage(targetId: string, actor: AuthenticatedUser): void {
-    if (actor.role !== Role.ADMIN && actor.id !== targetId) {
-      throw new ForbiddenException('Voce só pode acessar o próprio cadastro');
+  /**
+   * Checa email e matrícula antes de gravar para devolver um 409 que diz qual
+   * campo conflita, e assim o formulário marca o campo certo. A constraint
+   * unique do banco continua sendo a garantia final contra corridas; nesse
+   * caso raro o `prisma-error.mapper` também devolve 409 com o campo.
+   */
+  private async assertUnique(
+    data: Partial<Pick<CreateUserDto, UniqueField>>,
+    ignoreId?: string,
+  ): Promise<void> {
+    const checks: [UniqueField, Promise<User | null> | null][] = [
+      ['email', data.email ? this.repository.findByEmail(data.email) : null],
+      [
+        'registration',
+        data.registration ? this.repository.findByRegistration(data.registration) : null,
+      ],
+    ];
+
+    for (const [field, lookup] of checks) {
+      const existing = await lookup;
+      if (existing && existing.id !== ignoreId) {
+        throw new ConflictException({
+          message: CONFLICT_MESSAGES[field],
+          error: 'Conflict',
+          field,
+        });
+      }
     }
   }
 }

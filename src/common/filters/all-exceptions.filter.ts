@@ -13,6 +13,7 @@ import { mapPrismaError } from './prisma-error.mapper.js';
 interface HttpExceptionBody {
   message?: string | string[];
   error?: string;
+  field?: string;
 }
 
 /**
@@ -39,6 +40,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message: this.extractMessage(httpException, status),
       error: this.extractErrorName(httpException, status),
+      field: this.extractField(httpException),
       path: request.originalUrl ?? request.url,
       timestamp: new Date().toISOString(),
       requestId: request.id,
@@ -77,6 +79,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const message = (payload as HttpExceptionBody).message;
     return message ?? exception.message ?? HttpStatus[status];
+  }
+
+  private extractField(exception: HttpException | null): string | undefined {
+    const payload = exception?.getResponse();
+    return typeof payload === 'object' ? (payload as HttpExceptionBody).field : undefined;
   }
 
   private extractErrorName(exception: HttpException | null, status: number): string {

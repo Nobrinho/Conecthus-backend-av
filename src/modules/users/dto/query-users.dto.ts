@@ -1,25 +1,31 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
-import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto.js';
-import { Role } from '../../../infra/prisma/prisma.client.js';
+import { Transform, Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, MaxLength } from 'class-validator';
+import { MAX_PAGE_SIZE, PaginationQueryDto } from '../../../common/dto/pagination-query.dto.js';
+
+export const USERS_PAGE_SIZE = 15;
 
 export class QueryUsersDto extends PaginationQueryDto {
-  /** Busca parcial e sem diferenciar maiusculas em nome e email. */
+  /** Busca parcial pelo nome, sem diferenciar maiúsculas. */
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @MaxLength(120)
-  @ApiProperty({ required: false, example: 'ana' })
+  @MaxLength(30)
+  @ApiProperty({ required: false, example: 'adriano' })
   search?: string;
 
+  /** Itens por página. O protótipo usa 15. */
   @IsOptional()
-  @IsEnum(Role)
-  @ApiProperty({ enum: Role, enumName: 'Role', required: false })
-  role?: Role;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  @ApiProperty({ required: false, default: USERS_PAGE_SIZE, maximum: MAX_PAGE_SIZE })
+  override limit: number = USERS_PAGE_SIZE;
 
+  /** Ordem alfabética pelo nome. */
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
-  @IsBoolean()
-  @ApiProperty({ required: false })
-  isActive?: boolean;
+  @IsIn(['asc', 'desc'])
+  @ApiProperty({ required: false, enum: ['asc', 'desc'], default: 'asc' })
+  override order: 'asc' | 'desc' = 'asc';
 }

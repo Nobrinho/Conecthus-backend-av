@@ -1,5 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Role, type User } from '../../../infra/prisma/prisma.client.js';
+import type { User } from '../../../infra/prisma/prisma.client.js';
 
 /**
  * Projeção pública de um usuário.
@@ -12,28 +11,27 @@ export class UserResponseDto {
   /** Identificador do usuário (UUID v4). */
   id!: string;
 
+  /** Nome completo. */
+  name!: string;
+
   /** Email de login, único. */
   email!: string;
 
-  /** Nome de exibicao. */
-  name!: string;
+  /** Matrícula, única. */
+  registration!: string;
 
-  @ApiProperty({ enum: Role, enumName: 'Role' })
-  role!: Role;
-
-  /** Usuarios inativos não conseguem autenticar. */
-  isActive!: boolean;
-
+  /** Data de criação do cadastro. */
   createdAt!: Date;
-  updatedAt!: Date;
+
+  /** Data da última edição. `null` quando o cadastro nunca foi editado. */
+  updatedAt!: Date | null;
 
   static fromEntity(user: User): UserResponseDto {
     return {
       id: user.id,
-      email: user.email,
       name: user.name,
-      role: user.role,
-      isActive: user.isActive,
+      email: user.email,
+      registration: user.registration,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

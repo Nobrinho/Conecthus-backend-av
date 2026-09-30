@@ -24,6 +24,10 @@ export class UsersRepository {
     return this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   }
 
+  findByRegistration(registration: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { registration } });
+  }
+
   /** Devolve a pagina e o total em uma única transacao, para que a contagem
    * corresponda exatamente ao mesmo instante dos dados retornados. */
   findManyPaginated(params: {
@@ -35,7 +39,13 @@ export class UsersRepository {
     const { where, skip, take, order } = params;
 
     return this.prisma.$transaction([
-      this.prisma.user.findMany({ where, skip, take, orderBy: { createdAt: order } }),
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take,
+        // `id` desempata nomes iguais para que a paginação seja estável.
+        orderBy: [{ name: order }, { id: 'asc' }],
+      }),
       this.prisma.user.count({ where }),
     ]);
   }

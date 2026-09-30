@@ -1,8 +1,10 @@
-import { OmitType, PartialType } from '@nestjs/swagger';
+import { PartialType } from '@nestjs/swagger';
 import { CreateUserDto } from './create-user.dto.js';
 
 /**
- * Atualizacao parcial. A senha fica de fora de propósito: trocar senha e um
- * fluxo próprio (`PATCH /users/:id/password`) porque exige a senha atual.
+ * Atualização parcial: envie apenas o que mudou.
+ *
+ * A senha é opcional. Na tela de edição, deixá-la em branco mantém a senha
+ * atual; quando enviada, segue a mesma regra do cadastro.
  */
-export class UpdateUserDto extends PartialType(OmitType(CreateUserDto, ['password'] as const)) {}
+export class UpdateUserDto extends PartialType(CreateUserDto) {}
